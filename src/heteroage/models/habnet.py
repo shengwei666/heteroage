@@ -118,16 +118,28 @@ class HeteroAgeHAB(nn.Module):
         # Layer 4: Deep Prediction Head
         # -----------------------------------------------------------
         # Regresses the aggregated latent embedding to biological age.
+        # Updated Architecture: 64 -> 64 -> 32 -> 32 -> 1
+        # This structure allows for more complex feature interaction before dimension reduction.
         self.head = nn.Sequential(
+            # Stage 1: Isomorphic Refinement (64 -> 64)
+            # Allows features to be mixed non-linearly before compression
+            nn.Linear(unified_dim, unified_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            
+            # Stage 2: Feature Compression (64 -> 32)
             nn.Linear(unified_dim, unified_dim // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            
-            nn.Linear(unified_dim // 2, unified_dim // 4),
+
+            # Stage 3: Deep Feature Abstraction (32 -> 32)
+            # Refines the low-dimensional manifold for smoother regression
+            nn.Linear(unified_dim // 2, unified_dim // 2),
             nn.GELU(),
             nn.Dropout(dropout),
             
-            nn.Linear(unified_dim // 4, 1)
+            # Stage 4: Final Regression (32 -> 1)
+            nn.Linear(unified_dim // 2, 1)
         )
 
     def forward(self, beta, chalm, camda, return_breakdown=False):
