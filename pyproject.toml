@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "heteroage"
+version = "0.1.0"
+description = "Biologically-Constrained Differentiable Manifold Learning Framework for Aging Clocks"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Shengwei Li", email = "lishengwei98@tongji.edu.cn" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Development Status :: 4 - Beta",
+]
+dependencies = [    
+    "torch>=1.12.0",
+    "numpy",
+    "optuna",
+    "pandas",
+    "scikit-learn",
+    "scipy",        # Critical for Pearson correlation in evaluate()
+    "tqdm",
+    "pyyaml",
+    "joblib"        # Used in BaseArtifact management
+]
+
+[project.urls]
+Homepage = "https://github.com/shengwei666/heteroage"
+
+[project.scripts]
+heteroage = "heteroage.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["heteroage*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.yaml"]

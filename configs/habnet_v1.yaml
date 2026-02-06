@@ -1,0 +1,27 @@
+# configs/habnet_v1.yaml
+
+data:
+  # 预处理后的数据根目录 (Beta_Matrix, Chalm_Matrix 等的父目录)
+  root_dir: "/disk65t/lisw/projects/Aging_clock/3.Data_splitting_new/Processed_Cohorts/"
+  # Hallmark 的 JSON 字典路径
+  hallmark_json: "/disk65t/lisw/projects/Aging_clock/0.Data/hallmark_cpgs.json"
+
+model:
+  hidden_dim_per_branch: 16  # 每个 Hallmark 分配多少个神经元
+  dropout: 0.1
+
+loss:
+  mae_weight: 1.0     # 绝对误差的权重
+  rank_weight: 1.0    # 排序误差的权重 (建议设为 1.0 以消除批次效应)
+  rank_margin: 2.0    # 排序间隔 (岁)
+
+train:
+  batch_size: 64      # 如果显存够大，建议开到 128 或 256，这对 Rank Loss 有好处
+  epochs: 100
+  lr: 1e-4
+  weight_decay: 1e-2
+  patience: 15        # Early Stopping
+  num_workers: 8
+  use_amp: true       # 开启混合精度训练
+  
+output_dir: "./checkpoints/habnet_v1"
