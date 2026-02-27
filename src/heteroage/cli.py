@@ -59,6 +59,7 @@ def get_args():
     tune_parser.add_argument('--n_trials', type=int, default=50)
     tune_parser.add_argument('--study_name', type=str, default="heteroage_optim")
     tune_parser.add_argument('--lr_range', type=float, nargs=2, default=[1e-5, 1e-3])
+    tune_parser.add_argument('--weight_decay_range', type=float, nargs=2, default=[1e-4, 1e-1], help="Range for AdamW weight decay")
     tune_parser.add_argument('--unified_dim_choices', type=int, nargs='+', default=[32, 64])
     tune_parser.add_argument('--dropout_range', type=float, nargs=2, default=[0.1, 0.4])
     tune_parser.add_argument('--batch_size_choices', type=int, nargs='+', default=[32, 64])
@@ -86,6 +87,9 @@ def get_feature_list_from_json(json_path):
 
 def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val_ds):
     lr = trial.suggest_float('lr', args.lr_range[0], args.lr_range[1], log=True)
+    # 新增：采样 weight_decay
+    weight_decay = trial.suggest_float('weight_decay', args.weight_decay_range[0], args.weight_decay_range[1], log=True)
+    
     unified_dim = trial.suggest_categorical('unified_dim', args.unified_dim_choices)
     dropout = trial.suggest_float('dropout', args.dropout_range[0], args.dropout_range[1])
     batch_size = trial.suggest_categorical('batch_size', args.batch_size_choices)
@@ -105,7 +109,8 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=args.num_workers)
     
     criterion = HybridAgeLoss(mae_weight=1.0, rank_weight=rank_weight)
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
+    # 新增：应用采样的 weight_decay
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     
     for epoch in range(args.tune_epochs):
         model.train()
@@ -172,6 +177,8 @@ def main():
             study = optuna.create_study(direction='minimize', study_name=args.study_name)
             study.optimize(obj, n_trials=args.n_trials)
             logger.info(f"Best params: {study.best_params}")
+            logger.info(f"Best MAE (Validation): {study.best_value:.4f}")
+            logger.info(f"Total finished trials: {len(study.trials)}")
             
         elif args.command == 'train':
             mask, branch_info = construct_biosparse_topology(hallmark_dict, master_cpg_list)

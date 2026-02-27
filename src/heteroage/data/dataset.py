@@ -1,5 +1,3 @@
-# src/heteroage/data.py
-
 import os
 import glob
 import logging

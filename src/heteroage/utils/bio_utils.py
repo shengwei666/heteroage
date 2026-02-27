@@ -28,7 +28,7 @@ def load_pathway_definitions(json_path):
         data = json.load(f)
     return data
 
-def construct_biosparse_topology(hallmark_dict, master_cpg_list):
+def construct_biosparse_topology(hallmark_dict, master_cpg_list, fan_out=3):
     """
     Constructs the sparse connectivity matrix (Topology) for the BioSparse Layer.
     
@@ -100,10 +100,10 @@ def construct_biosparse_topology(hallmark_dict, master_cpg_list):
                 rows = [i + mod_offset for i in cpg_indices]
                 
                 # Randomly assign connections within the branch's allocated width
-                cols = np.random.randint(0, hidden_dim, size=len(rows) * 3) 
+                cols = np.random.randint(0, hidden_dim, size=len(rows) * fan_out) 
                 
                 # Repeat rows to match the 1-to-3 connection ratio
-                rows_expanded = np.repeat(rows, 3)
+                rows_expanded = np.repeat(rows, fan_out)
                 
                 # Set connections
                 branch_mask[rows_expanded, cols] = 1.0
