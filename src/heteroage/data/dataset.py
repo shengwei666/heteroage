@@ -29,16 +29,6 @@ class TriModalDataset(Dataset):
 
     @staticmethod
     def load_from_directory(data_root, split, ref_cpg_list=None, use_cache=True, source_paths=None):
-        """
-        Factory method to load, align, and cache tri-modal data.
-        
-        Args:
-            data_root (str): Directory to store/load cached tensor data.
-            split (str): 'Train' or 'Test'.
-            ref_cpg_list (list): Master feature list for hallmark alignment.
-            use_cache (bool): Enable serialization to .pt files.
-            source_paths (dict, optional): Explicit paths to {'beta': path, 'chalm': path, 'camda': path}.
-        """
         cache_dir = os.path.join(data_root, "cached_tensor_data")
         os.makedirs(cache_dir, exist_ok=True)
         cache_file = os.path.join(cache_dir, f"merged_{split}.pt")
@@ -48,7 +38,6 @@ class TriModalDataset(Dataset):
             logger.info(f"Loading cached dataset: {cache_file}")
             try:
                 cached_data = torch.load(cache_file)
-                # Feature check
                 if ref_cpg_list is not None and cached_data.get('feature_names') is not None:
                     if cached_data['feature_names'] != ref_cpg_list:
                         logger.warning("Cache feature mismatch. Re-assembling from source.")
@@ -63,32 +52,38 @@ class TriModalDataset(Dataset):
             except Exception as e:
                 logger.warning(f"Cache access failed: {e}")
 
-        # --- 2. Path Discovery ---
-        if source_paths:
-            dir_beta = source_paths['beta']
-            dir_chalm = source_paths['chalm']
-            dir_camda = source_paths['camda']
-        else:
-            # Default hierarchical structure
-            dir_beta = os.path.join(data_root, "Beta_Matrix", split)
-            dir_chalm = os.path.join(data_root, "Chalm_Matrix", split)
-            dir_camda = os.path.join(data_root, "Camda_Matrix", split)
-
+        # --- 2. Path Discovery & Mode Selection ---
         logger.info(f"Assembling data from modal sources for {split} split")
-        beta_files = sorted(glob.glob(os.path.join(dir_beta, "*.pkl")))
-        
-        if not beta_files:
-            raise FileNotFoundError(f"No source .pkl files found in {dir_beta}")
+    
+        if source_paths and os.path.isfile(source_paths['beta']):
+            logger.info("Direct file paths detected. Bypassing directory search.")
+            matched_files = [(source_paths['beta'], source_paths['chalm'], source_paths['camda'])]
+        else:
+            if source_paths:
+                dir_beta = source_paths['beta']
+                dir_chalm = source_paths['chalm']
+                dir_camda = source_paths['camda']
+            else:
+                dir_beta = os.path.join(data_root, "Beta_Matrix", split)
+                dir_chalm = os.path.join(data_root, "Chalm_Matrix", split)
+                dir_camda = os.path.join(data_root, "Camda_Matrix", split)
+                
+            beta_files = sorted(glob.glob(os.path.join(dir_beta, "*.pkl")))
+            if not beta_files:
+                raise FileNotFoundError(f"No source .pkl files found in {dir_beta}")
+                
+            matched_files = []
+            for f_beta in beta_files:
+                fname = os.path.basename(f_beta)
+                matched_files.append((f_beta, os.path.join(dir_chalm, fname), os.path.join(dir_camda, fname)))
 
         # --- 3. Multi-Modal Alignment Loop ---
         list_beta, list_chalm, list_camda = [], [], []
         list_ages, list_ids = [], []
 
-        for f_beta in tqdm(beta_files, desc=f"Aligning {split}"):
-            fname = os.path.basename(f_beta)
-            f_chalm, f_camda = os.path.join(dir_chalm, fname), os.path.join(dir_camda, fname)
-            
+        for f_beta, f_chalm, f_camda in tqdm(matched_files, desc=f"Aligning {split}"):
             if not (os.path.exists(f_chalm) and os.path.exists(f_camda)):
+                logger.warning(f"Missing matching files for {f_beta}, skipping.")
                 continue
                 
             try:
