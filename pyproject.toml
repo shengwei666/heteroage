@@ -25,10 +25,11 @@ dependencies = [
     "optuna",
     "pandas",
     "scikit-learn",
-    "scipy",        # Critical for Pearson correlation in evaluate()
+    "scipy",
     "tqdm",
     "pyyaml",
-    "joblib"        # Used in BaseArtifact management
+    "joblib",
+    "pyarrow"
 ]
 
 [project.urls]
