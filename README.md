@@ -47,7 +47,7 @@ Clone the repository and install in editable mode.
 
 ```bash
 # 1. Clone the repository
-git clone [https://github.com/shengwei666/heteroage.git](https://github.com/shengwei666/heteroage.git)
+git clone https://github.com/shengwei666/heteroage.git
 cd heteroage
 
 # 2. Create environment (Recommended)
@@ -55,7 +55,7 @@ conda create -n heteroage_env python=3.9 -y
 conda activate heteroage_env
 
 # 3. Install PyTorch with CUDA 12.1 support (Mandatory for GPU acceleration)
-pip install torch torchvision torchaudio --index-url [https://download.pytorch.org/whl/cu121](https://download.pytorch.org/whl/cu121)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # 4. Install dependencies and the heteroage package
 pip install -e .
