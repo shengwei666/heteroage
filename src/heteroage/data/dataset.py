@@ -13,18 +13,21 @@ class TriModalDataset(Dataset):
     """
     Dataset class for HeteroAge-HAB handling Beta, CHALM, and CAMDA modalities.
     """
-    def __init__(self, beta, chalm, camda, age, sample_ids, feature_names=None):
+    def __init__(self, beta, chalm, camda, age, sample_ids, tissues=None, feature_names=None):
         self.beta = beta
         self.chalm = chalm
         self.camda = camda
         self.age = age
         self.sample_ids = sample_ids
+        self.tissues = tissues
         self.feature_names = feature_names
         
     def __len__(self):
         return len(self.beta)
 
     def __getitem__(self, idx):
+        if self.tissues is not None:
+            return self.beta[idx], self.chalm[idx], self.camda[idx], self.age[idx], self.tissues[idx]
         return self.beta[idx], self.chalm[idx], self.camda[idx], self.age[idx]
 
     @staticmethod
@@ -37,7 +40,7 @@ class TriModalDataset(Dataset):
         if use_cache and os.path.exists(cache_file) and source_paths is None:
             logger.info(f"Loading cached dataset: {cache_file}")
             try:
-                cached_data = torch.load(cache_file)
+                cached_data = torch.load(cache_file, weights_only=False)
                 if ref_cpg_list is not None and cached_data.get('feature_names') is not None:
                     if cached_data['feature_names'] != ref_cpg_list:
                         logger.warning("Cache feature mismatch. Re-assembling from source.")
@@ -47,7 +50,8 @@ class TriModalDataset(Dataset):
                     return TriModalDataset(
                         beta=cached_data['beta'], chalm=cached_data['chalm'], 
                         camda=cached_data['camda'], age=cached_data['age'], 
-                        sample_ids=cached_data['sample_ids'], feature_names=ref_cpg_list
+                        sample_ids=cached_data['sample_ids'], feature_names=ref_cpg_list,
+                        tissues=cached_data.get('tissues')
                     )
             except Exception as e:
                 logger.warning(f"Cache access failed: {e}")
@@ -80,6 +84,7 @@ class TriModalDataset(Dataset):
         # --- 3. Multi-Modal Alignment Loop ---
         list_beta, list_chalm, list_camda = [], [], []
         list_ages, list_ids = [], []
+        list_tissues = []
 
         for f_beta, f_chalm, f_camda in tqdm(matched_files, desc=f"Aligning {split}"):
             if not (os.path.exists(f_chalm) and os.path.exists(f_camda)):
@@ -101,6 +106,7 @@ class TriModalDataset(Dataset):
             # Metadata extraction
             ages = df_b['Age'].astype(float).values
             ids = df_b.index.astype(str).values
+            tissues = df_b['Tissue'].astype(str).values if 'Tissue' in df_b.columns else np.array(['Unknown'] * len(df_b))
             
             # Feature alignment (Hallmark Reindexing)
             meta_cols = {'project_id', 'Tissue', 'Age', 'Sex', 'Set', 'Is_Healthy', 'Set_Group', 'sample_id'}
@@ -115,6 +121,7 @@ class TriModalDataset(Dataset):
             list_camda.append(clean(df_s))
             list_ages.extend(ages)
             list_ids.extend(ids)
+            list_tissues.extend(tissues)
 
         if not list_beta:
             raise RuntimeError("Data assembly failed: No aligned samples found.")
@@ -131,9 +138,10 @@ class TriModalDataset(Dataset):
         if use_cache:
             cache_dict = {
                 'beta': final_beta, 'chalm': final_chalm, 'camda': final_camda,
-                'age': final_age, 'sample_ids': list_ids, 'feature_names': ref_cpg_list
+                'age': final_age, 'sample_ids': list_ids, 'feature_names': ref_cpg_list,
+                'tissues': list_tissues
             }
             torch.save(cache_dict, cache_file)
             logger.info(f"Saved tensor cache to {cache_file}")
 
-        return TriModalDataset(final_beta, final_chalm, final_camda, final_age, list_ids, ref_cpg_list)
+        return TriModalDataset(final_beta, final_chalm, final_camda, final_age, list_ids, list_tissues, ref_cpg_list)

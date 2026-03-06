@@ -15,9 +15,9 @@ logger = logging.getLogger("heteroage")
 # - Tier 2 (>4k):  Inflammation(10k) ... Nutrient(8.4k)  -> Med Capacity (512 dim)
 # - Tier 3 (<4k):  Stem Cell(3.9k) ... Dysbiosis(1k)     -> Low Capacity (256 dim)
 TIER_CONFIG = {
-    'Tier1': {'threshold': 12000, 'dim': 1024, 'desc': 'Broad Systemic'},
-    'Tier2': {'threshold': 4000,  'dim': 512,  'desc': 'Intermediate Process'},
-    'Tier3': {'threshold': 0,     'dim': 256,  'desc': 'Specific Mechanism'}
+    'Tier1': {'threshold': 12000, 'dim': 512, 'desc': 'Broad Systemic'},
+    'Tier2': {'threshold': 4000,  'dim': 256,  'desc': 'Intermediate Process'},
+    'Tier3': {'threshold': 0,     'dim': 128,  'desc': 'Specific Mechanism'}
 }
 
 def load_pathway_definitions(json_path):

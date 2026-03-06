@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .layers import BioSparseLinear, AttentionGate
+from torch.utils.checkpoint import checkpoint
 
 class HallmarkCascade(nn.Module):
     """
@@ -65,7 +66,7 @@ class HeteroAgeHAB(nn.Module):
         3. Attention Aggregation: Computes dynamic weights to fuse hallmark embeddings.
         4. Prediction Head: Deep regression module for final age estimation.
     """
-    def __init__(self, num_cpgs, branch_info, mask_matrix, unified_dim=64, dropout=0.2):
+    def __init__(self, num_cpgs, branch_info, mask_matrix, unified_dim=64, dropout=0.2, active_modalities=None):
         """
         Args:
             num_cpgs (int): Count of unique CpGs in the master feature list.
@@ -73,9 +74,13 @@ class HeteroAgeHAB(nn.Module):
             mask_matrix (Tensor): Binary mask enforcing biological sparsity constraints.
             unified_dim (int): Dimensionality of the latent bottleneck (Default: 64).
             dropout (float): Dropout probability for regularization (Default: 0.2).
+            active_modalities (list): A list of switches used to control ablation experiments.
         """
         super(HeteroAgeHAB, self).__init__()
         
+        # Records the currently active modalities; all are enabled by default.
+        self.active_modalities = active_modalities or ['beta', 'chalm', 'camda']
+
         self.branch_info = branch_info
         self.num_hallmarks = len(branch_info)
         self.unified_dim = unified_dim
@@ -144,15 +149,31 @@ class HeteroAgeHAB(nn.Module):
 
     def forward(self, beta, chalm, camda, return_breakdown=False):
         """
-        Forward pass of the network.
+        Forward pass of the network with Ablation Switch.
         
         Args:
             beta, chalm, camda (Tensor): Input modalities [Batch, Num_CpGs].
             return_breakdown (bool): If True, returns branch-level scores and weights for interpretability.
         """
+        # --- Force disable inactive modalities (reset them to zero) ---
+        if 'beta' not in self.active_modalities:
+            beta = torch.zeros_like(beta)
+        if 'chalm' not in self.active_modalities:
+            chalm = torch.zeros_like(chalm)
+        if 'camda' not in self.active_modalities:
+            camda = torch.zeros_like(camda)
+
         # 1. Multi-Modal Fusion
         x = torch.cat([beta, chalm, camda], dim=1)
         
+        ## Activate gradient checkpoints to save intermediate activation values ​​from memory.
+        if self.training:
+            x.requires_grad_()
+            sparse_out = checkpoint(self.sparse_encoder, x, use_reentrant=False)
+            sparse_out = self.act_sparse(self.bn_sparse(sparse_out))
+        else:
+            sparse_out = self.act_sparse(self.bn_sparse(self.sparse_encoder(x)))
+
         # 2. Sparse Encoding & Normalization
         sparse_out = self.act_sparse(self.bn_sparse(self.sparse_encoder(x)))
         

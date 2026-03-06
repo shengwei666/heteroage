@@ -13,9 +13,6 @@ logger = logging.getLogger(__name__)
 class HeteroAgeTrainer:
     """
     [Engine]: HeteroAge-HAB Training & Evaluation System
-    
-    Orchestrates the training lifecycle including mixed-precision optimization, 
-    validation metrics calculation, and automated hyperparameter pruning via Optuna.
     """
     def __init__(
         self,
@@ -44,11 +41,10 @@ class HeteroAgeTrainer:
         
         self.best_val_mae = float('inf')
         self.start_epoch = 0
+        ## Initialize dictionary
+        self.history = {'train_loss': [], 'val_mae': []}
 
     def _run_epoch(self, epoch_idx, is_train=True):
-        """
-        Internal method to handle a single pass through the data.
-        """
         self.model.train() if is_train else self.model.eval()
         loader = self.train_loader if is_train else self.val_loader
         
@@ -57,7 +53,10 @@ class HeteroAgeTrainer:
         pbar = tqdm(loader, desc=f"Epoch {epoch_idx}", ncols=100, leave=False, disable=not is_train)
         
         for batch in pbar:
-            beta, chalm, camda, age = [t.to(self.device, non_blocking=True) for t in batch]
+            beta = batch[0].to(self.device, non_blocking=True)
+            chalm = batch[1].to(self.device, non_blocking=True)
+            camda = batch[2].to(self.device, non_blocking=True)
+            age = batch[3].to(self.device, non_blocking=True)
             
             with torch.set_grad_enabled(is_train):
                 with autocast(device_type='cuda', enabled=self.use_amp):
@@ -87,14 +86,15 @@ class HeteroAgeTrainer:
 
     @torch.no_grad()
     def evaluate(self, loader):
-        """
-        Performs inference and calculates comprehensive biological age metrics.
-        """
         self.model.eval()
         all_preds, all_targets = [], []
         
         for batch in loader:
-            beta, chalm, camda, age = [t.to(self.device, non_blocking=True) for t in batch]
+            beta = batch[0].to(self.device, non_blocking=True)
+            chalm = batch[1].to(self.device, non_blocking=True)
+            camda = batch[2].to(self.device, non_blocking=True)
+            age = batch[3].to(self.device, non_blocking=True)
+            
             with autocast(device_type='cuda', enabled=self.use_amp):
                 preds = self.model(beta, chalm, camda)
             
@@ -111,9 +111,6 @@ class HeteroAgeTrainer:
         }
 
     def fit(self, epochs, patience=10, trial=None):
-        """
-        Main execution loop for model training.
-        """
         patience_counter = 0
         
         for epoch in range(self.start_epoch, epochs):
@@ -140,7 +137,10 @@ class HeteroAgeTrainer:
             duration = time.time() - start_t
             if not trial:
                 logger.info(f"Epoch {epoch+1}/{epochs} | {duration:.1f}s | Train Loss: {train_results['loss']:.4f} | Val MAE: {curr_mae:.4f} | R2: {val_results['r2']:.4f}")
-                
+                ## Store the score for each round in a dictionary
+                self.history['train_loss'].append(train_results['loss'])
+                self.history['val_mae'].append(curr_mae)
+
             if curr_mae < self.best_val_mae:
                 self.best_val_mae = curr_mae
                 patience_counter = 0
