@@ -1,0 +1,2 @@
+[console_scripts]
+heteroage = heteroage.cli:main
