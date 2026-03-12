@@ -55,7 +55,7 @@ class AttentionGate(nn.Module):
     """
     def __init__(self, dim):
         super(AttentionGate, self).__init__()
-        
+
         self.attention_net = nn.Sequential(
             nn.Linear(dim, dim // 2),
             nn.GELU(),
@@ -63,20 +63,10 @@ class AttentionGate(nn.Module):
         )
         
     def forward(self, x):
-        """
-        Args:
-            x: [Batch, Num_Hallmarks, Dim]
-        Returns:
-            weighted_sum: [Batch, Dim]
-            weights: [Batch, Num_Hallmarks, 1]
-        """
-        # 1. Strictly Independent Scoring
         scores = self.attention_net(x)
-        
-        # 2. Normalization
+
         weights = F.softmax(scores, dim=1)
-        
-        # 3. Weighted aggregation
+
         weighted_sum = torch.sum(x * weights, dim=1) 
         
         return weighted_sum, weights

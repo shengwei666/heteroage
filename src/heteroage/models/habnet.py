@@ -30,7 +30,6 @@ class HallmarkCascade(nn.Module):
     def __init__(self, input_dim, unified_dim, dropout=0.2):
         super(HallmarkCascade, self).__init__()
         
-        #  Step 1: Universal Projection
         intermediate_dim = unified_dim * 2
         
         self.projection = nn.Sequential(
@@ -40,11 +39,9 @@ class HallmarkCascade(nn.Module):
             nn.Dropout(dropout)
         )
         
-        # Step 2: Fixed-Depth Isomorphic Processing
         self.res_block1 = ResidualBlock(intermediate_dim, dropout)
         self.res_block2 = ResidualBlock(intermediate_dim, dropout)
-        
-        # Step 3: Latent Space Alignment
+
         self.compression = nn.Sequential(
             nn.Linear(intermediate_dim, unified_dim),
             nn.LayerNorm(unified_dim),
@@ -137,20 +134,18 @@ class HeteroAgeHAB(nn.Module):
         # Updated Architecture: 64 -> 64 -> 32 -> 32 -> 1
         # This structure allows for more complex feature interaction before dimension reduction.
         self.head = nn.Sequential(
-            # Stage 1: Isomorphic Refinement (64 -> 64)
-            # Allows features to be mixed non-linearly before compression
+            # Stage 1: Feature Mixing & Stabilization
             nn.Linear(unified_dim, unified_dim),
             nn.LayerNorm(unified_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             
-            # Stage 2: Feature Compression (64 -> 32)
+            # Stage 2: Feature Compression
             nn.Linear(unified_dim, unified_dim // 2),
             nn.LayerNorm(unified_dim // 2),
             nn.GELU(),
             nn.Dropout(dropout),
-
-            # Stage 3: Deep Feature Abstraction (32 -> 1)
+            
             nn.Linear(unified_dim // 2, 1)
         )
 
