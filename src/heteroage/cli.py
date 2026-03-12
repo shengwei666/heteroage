@@ -126,8 +126,8 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     ).to(device)
     
     train_sampler = get_weighted_sampler(train_ds)
-    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=args.num_workers) # shuffle=True
-    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=args.num_workers)
+    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
     
     criterion = HybridAgeLoss(mae_weight=1.0, rank_weight=rank_weight)
     optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -154,7 +154,10 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
         trial.report(val_mae, epoch)
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
-            
+        
+    del model, optimizer, criterion
+    torch.cuda.empty_cache()
+
     return val_mae
 
 def main():
@@ -229,8 +232,8 @@ def main():
             )
 
             train_sampler = get_weighted_sampler(train_ds)
-            train_loader = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, sampler=train_sampler, num_workers=args.num_workers)
-            val_loader = torch.utils.data.DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+            train_loader = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size, sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
+            val_loader = torch.utils.data.DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
             trainer = HeteroAgeTrainer(model, optimizer, criterion, train_loader, val_loader, scheduler=scheduler, device=device, output_dir=args.output_dir, use_amp=args.use_amp)
             trainer.fit(args.epochs, patience=25)
@@ -248,7 +251,7 @@ def main():
         model.eval()
 
         test_ds = TriModalDataset.load_from_directory(args.data_root, args.split, ref_cpg_list=master_cpg_list)
-        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
         
         results = []
         with torch.no_grad():

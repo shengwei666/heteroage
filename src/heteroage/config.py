@@ -13,9 +13,9 @@ class HeteroAgeConfig:
     # --- 1. Biological Tiering Constraints ---
     # Defines how hallmark pathways are mapped to network complexity
     TIER_CONFIG = {
-        'tier1': {'threshold': 12000, 'dim': 1024, 'label': 'High-Complexity'},
-        'tier2': {'threshold': 4000,  'dim': 512,  'label': 'Medium-Complexity'},
-        'tier3': {'threshold': 0,     'dim': 256,  'label': 'Specific-Pathway'}
+        'tier1': {'threshold': 12000, 'dim': 512, 'label': 'High-Complexity'},
+        'tier2': {'threshold': 4000,  'dim': 256,  'label': 'Medium-Complexity'},
+        'tier3': {'threshold': 0,     'dim': 128,  'label': 'Specific-Pathway'}
     }
 
     # --- 2. Architectural Bottlenecks ---
