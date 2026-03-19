@@ -47,11 +47,10 @@ class BioSparseLinear(nn.Module):
 
 class AttentionGate(nn.Module):
     """
-    [Layer]: Strictly Independent Hallmark Aggregation
+    [Layer]: Strictly Independent Hallmark Aggregation (Sigmoid Variant)
     
-    This module assigns attention weights to each Hallmark strictly based on its own 
-    isolated features, preventing cross-talk. This ensures pure biological interpretability 
-    and significantly boosts generalization on cross-cohort datasets.
+    Replaced Softmax with Sigmoid to reflect the non-mutually exclusive nature 
+    of biological aging hallmarks. Prevents 'Winner-Takes-All' attention collapse.
     """
     def __init__(self, dim):
         super(AttentionGate, self).__init__()
@@ -65,7 +64,9 @@ class AttentionGate(nn.Module):
     def forward(self, x):
         scores = self.attention_net(x)
 
-        weights = F.softmax(scores, dim=1)
+        raw_weights = torch.sigmoid(scores) 
+
+        weights = raw_weights / (torch.sum(raw_weights, dim=1, keepdim=True) + 1e-8)
 
         weighted_sum = torch.sum(x * weights, dim=1) 
         
