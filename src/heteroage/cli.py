@@ -75,8 +75,9 @@ def get_args():
     # Command: Predict
     pred_parser = subparsers.add_parser('predict', help="Inference mode")
     pred_parser.add_argument('--checkpoint', type=str, required=True, help="Path to model checkpoint")
-    pred_parser.add_argument('--split', type=str, default='Test', choices=['Train', 'Test'])
-    pred_parser.add_argument('--batch_size', type=int, default=128)
+    pred_parser.add_argument('--split', type=str, default='Test', choices=['Train', 'Test', 'Val'])
+    pred_parser.add_argument('--val_ratio', type=float, default=0.2, help="Ratio used during training to recover Val set")
+    pred_parser.add_argument('--batch_size', type=int, default=128) 
     pred_parser.add_argument('--hidden_dim', type=int, required=True)
     pred_parser.add_argument('--dropout', type=float, default=0.0)
     pred_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'], help="Active modalities for inference")
@@ -246,11 +247,20 @@ def main():
         model = HeteroAgeHAB(num_cpgs=len(master_cpg_list), branch_info=branch_info, 
                              mask_matrix=mask.to(device), unified_dim=args.hidden_dim, dropout=args.dropout, active_modalities=args.modalities).to(device)
         
-        checkpoint = torch.load(args.checkpoint, map_location=device)
+        ##checkpoint = torch.load(args.checkpoint, map_location=device)
+        checkpoint = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint)
         model.eval()
 
-        test_ds = TriModalDataset.load_from_directory(args.data_root, args.split, ref_cpg_list=master_cpg_list)
+        if args.split == 'Val':
+            logger.info(f"Recovering Validation split using seed {args.seed} and ratio {args.val_ratio}...")
+            full_train_ds = TriModalDataset.load_from_directory(args.data_root, 'Train', ref_cpg_list=master_cpg_list)
+            val_size = int(len(full_train_ds) * args.val_ratio)
+            train_size = len(full_train_ds) - val_size
+            _, test_ds = random_split(full_train_ds, [train_size, val_size], generator=torch.Generator().manual_seed(args.seed))
+        else:
+            test_ds = TriModalDataset.load_from_directory(args.data_root, args.split, ref_cpg_list=master_cpg_list)
+
         test_loader = torch.utils.data.DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
         
         results = []
