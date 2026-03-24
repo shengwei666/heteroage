@@ -149,6 +149,11 @@ class HeteroAgeHAB(nn.Module):
             nn.Linear(unified_dim // 2, 1)
         )
 
+        # -----------------------------------------------------------
+        # Layer 5: Auxiliary Predictor
+        # -----------------------------------------------------------
+        self.aux_predictor = nn.Linear(unified_dim, 1)
+
     def forward(self, beta, chalm, camda, return_breakdown=False):
         """
         Forward pass of the network with Ablation Switch and Modality Dropout.
@@ -195,8 +200,11 @@ class HeteroAgeHAB(nn.Module):
         # 4. Attention-Based Aggregation
         weighted_feat, att_weights = self.attention(branch_feats)
         
-        # 5. Final Regression
+        # 5. Final Regression (主网络的总体预测)
         total_age = self.head(weighted_feat)
+        
+        # 🌟 新增：6. 辅助分支预测 (让 12 个分支各自交一份卷子)
+        branch_preds = self.aux_predictor(branch_feats).squeeze(-1)
         
         if return_breakdown:
             raw_branch_preds = []
@@ -210,4 +218,5 @@ class HeteroAgeHAB(nn.Module):
                 'names': [b['name'] for b in self.branch_info]
             }
         
-        return total_age, att_weights
+        # 🌟 修改：无论训练还是验证，统一返回 (total_age, branch_preds)
+        return (total_age, branch_preds), att_weights

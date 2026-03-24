@@ -6,14 +6,13 @@ import numpy as np
 import optuna
 from tqdm import tqdm
 from torch.amp import autocast, GradScaler
-from sklearn.metrics import r2_score, mean_absolute_error
 from sklearn.metrics import r2_score, mean_absolute_error, median_absolute_error
 
 logger = logging.getLogger(__name__)
 
 class HeteroAgeTrainer:
     """
-    [Engine]: HeteroAge-HAB Training & Evaluation System
+    [Engine]: HeteroAge-HAB Training & Evaluation System (Deep Supervision Ready)
     """
     def __init__(
         self,
@@ -49,9 +48,10 @@ class HeteroAgeTrainer:
         self.model.train() if is_train else self.model.eval()
         loader = self.train_loader if is_train else self.val_loader
         
-        running_metrics = {"loss": 0.0, "mae": 0.0, "rank": 0.0}
+        # 🌟 修改 1：新增 "aux" 字段来追踪辅助分支损失
+        running_metrics = {"loss": 0.0, "mae": 0.0, "rank": 0.0, "aux": 0.0}
         
-        pbar = tqdm(loader, desc=f"Epoch {epoch_idx}", ncols=100, leave=False, disable=not is_train)
+        pbar = tqdm(loader, desc=f"Epoch {epoch_idx}", ncols=110, leave=False, disable=not is_train)
         
         for batch in pbar:
             beta = batch[0].to(self.device, non_blocking=True)
@@ -61,7 +61,9 @@ class HeteroAgeTrainer:
             
             with torch.set_grad_enabled(is_train):
                 with autocast(device_type='cuda', enabled=self.use_amp):
+                    # 此时的 preds 是一个元组 (total_age, branch_preds)
                     preds, _ = self.model(beta, chalm, camda)
+                    # criterion (loss.py) 已经升级，能自动解包元组并计算主分支和辅助分支的总Loss
                     loss, metrics = self.criterion(preds, age)
 
             if is_train:
@@ -78,9 +80,12 @@ class HeteroAgeTrainer:
             running_metrics["loss"] += loss.item()
             running_metrics["mae"] += metrics.get('loss_mae', 0.0)
             running_metrics["rank"] += metrics.get('loss_rank', 0.0)
+            # 🌟 累加辅助损失
+            running_metrics["aux"] += metrics.get('loss_aux', 0.0)
             
             if is_train:
-                pbar.set_postfix({'Loss': f"{loss.item():.4f}", 'MAE': f"{metrics.get('loss_mae', 0.0):.4f}"})
+                # 🌟 在进度条上实时显示主 MAE 和 辅助 Aux 惩罚
+                pbar.set_postfix({'Loss': f"{loss.item():.3f}", 'MAE': f"{metrics.get('loss_mae', 0.0):.3f}", 'Aux': f"{metrics.get('loss_aux', 0.0):.3f}"})
 
         n = len(loader)
         return {k: v / n for k, v in running_metrics.items()}
@@ -97,9 +102,13 @@ class HeteroAgeTrainer:
             age = batch[3].to(self.device, non_blocking=True)
             
             with autocast(device_type='cuda', enabled=self.use_amp):
-                preds, _ = self.model(beta, chalm, camda)
+                # 🌟 修改 2：接住元组，防止后续代码把元组直接 .cpu() 导致报错
+                preds_tuple, _ = self.model(beta, chalm, camda)
             
-            all_preds.append(preds.cpu().float().numpy())
+            # 从元组中提取出主网络预测的最终年龄 [Batch, 1]
+            final_pred = preds_tuple[0]
+            
+            all_preds.append(final_pred.cpu().float().numpy())
             all_targets.append(age.cpu().float().numpy())
             
         y_pred = np.concatenate(all_preds).flatten()
@@ -138,8 +147,9 @@ class HeteroAgeTrainer:
             # Logging & Checkpointing
             duration = time.time() - start_t
             if not trial:
-                logger.info(f"Epoch {epoch+1}/{epochs} | {duration:.1f}s | Train Loss: {train_results['loss']:.4f} | Val MeanAE: {curr_mae:.4f} | Val MedAE: {val_results['median_ae']:.4f} | R2: {val_results['r2']:.4f}")
-                ## Store the score for each round in a dictionary
+                # 🌟 修改 3：在每个 Epoch 结束后的总日志里，打印当前训练周期的 Aux Loss 平均值
+                logger.info(f"Epoch {epoch+1}/{epochs} | {duration:.1f}s | Train Loss: {train_results['loss']:.3f} (Aux: {train_results['aux']:.3f}) | Val MeanAE: {curr_mae:.4f} | Val MedAE: {val_results['median_ae']:.4f} | R2: {val_results['r2']:.4f}")
+                
                 self.history['train_loss'].append(train_results['loss'])
                 self.history['val_mae'].append(curr_mae)
 

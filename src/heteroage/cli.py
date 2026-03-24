@@ -34,7 +34,7 @@ def get_args():
 
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # Command: Assemble (Data Pre-processing)
+    # Command: Assemble
     assemble_parser = subparsers.add_parser('assemble', help="Align and assemble tri-modal data into tensor cache")
     assemble_parser.add_argument('--beta_path', type=str, required=True, help="Path to Beta matrix source")
     assemble_parser.add_argument('--chalm_path', type=str, required=True, help="Path to CHALM matrix source")
@@ -54,23 +54,28 @@ def get_args():
     train_parser.add_argument('--mae_weight', type=float, default=1.0)
     train_parser.add_argument('--rank_weight', type=float, default=1.5)
     train_parser.add_argument('--rank_margin', type=float, default=3.0)
+    train_parser.add_argument('--aux_weight', type=float, default=0.3, help="Weight for Deep Supervision Auxiliary Loss") 
     train_parser.add_argument('--val_ratio', type=float, default=0.2)
-    train_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'], help="Active modalities for ablation")
+    train_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'])
 
-    # Command: Tune (Optuna)
+    # Command: Tune
     tune_parser = subparsers.add_parser('tune', help="Hyperparameter tuning mode")
     tune_parser.add_argument('--n_trials', type=int, default=50)
     tune_parser.add_argument('--study_name', type=str, default="heteroage_optim")
     tune_parser.add_argument('--lr_range', type=float, nargs=2, default=[1e-5, 1e-3])
-    tune_parser.add_argument('--weight_decay_range', type=float, nargs=2, default=[1e-4, 1e-1], help="Range for AdamW weight decay")
+    tune_parser.add_argument('--weight_decay_range', type=float, nargs=2, default=[1e-4, 1e-1])
     tune_parser.add_argument('--unified_dim_choices', type=int, nargs='+', default=[32, 64])
     tune_parser.add_argument('--dropout_range', type=float, nargs=2, default=[0.15, 0.4])
     tune_parser.add_argument('--modality_dropout_range', type=float, nargs=2, default=[0.0, 0.3])
     tune_parser.add_argument('--batch_size_choices', type=int, nargs='+', default=[64, 128, 256])
     tune_parser.add_argument('--rank_weight_range', type=float, nargs=2, default=[1.0, 3.0])
+    
+    # 🌟 修改点 1：把 tune 模式下的 aux_weight 变成范围搜索（默认 0.1 到 1.0）
+    tune_parser.add_argument('--aux_weight_range', type=float, nargs=2, default=[0.1, 1.0], help="Search range for aux_weight")
+    
     tune_parser.add_argument('--tune_epochs', type=int, default=20)
     tune_parser.add_argument('--val_ratio', type=float, default=0.2)
-    tune_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'], help="Active modalities for ablation")
+    tune_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'])
 
     # Command: Predict
     pred_parser = subparsers.add_parser('predict', help="Inference mode")
@@ -80,8 +85,8 @@ def get_args():
     pred_parser.add_argument('--batch_size', type=int, default=128) 
     pred_parser.add_argument('--hidden_dim', type=int, required=True)
     pred_parser.add_argument('--dropout', type=float, default=0.0)
-    pred_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'], help="Active modalities for inference")
-    pred_parser.add_argument('--shuffle', type=str, default=None, choices=['beta', 'chalm', 'camda'], help="Modality to shuffle for permutation importance")
+    pred_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'])
+    pred_parser.add_argument('--shuffle', type=str, default=None, choices=['beta', 'chalm', 'camda'])
     
     return parser.parse_args()
 
@@ -93,11 +98,9 @@ def get_feature_list_from_json(json_path):
         all_cpgs.update(cpg_list)
     return sorted(list(all_cpgs))
 
-# Intelligent Weight Calculator: Calculates weights for extremely unbalanced organizations
 def get_weighted_sampler(dataset):
     tissues = np.array(dataset.dataset.tissues)[dataset.indices] if isinstance(dataset, torch.utils.data.Subset) else np.array(dataset.tissues)
     unique_tissues, counts = np.unique(tissues, return_counts=True)
-    # Weight Calculator
     weight_per_class = 1.0 / np.sqrt(counts)
     tissue_weight_map = dict(zip(unique_tissues, weight_per_class))
     samples_weight = np.array([tissue_weight_map[t] for t in tissues])
@@ -112,8 +115,11 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     dropout = trial.suggest_float('dropout', args.dropout_range[0], args.dropout_range[1])
     batch_size = trial.suggest_categorical('batch_size', args.batch_size_choices)
     rank_weight = trial.suggest_float('rank_weight', args.rank_weight_range[0], args.rank_weight_range[1])
-
     modality_dropout = trial.suggest_float('modality_dropout', args.modality_dropout_range[0], args.modality_dropout_range[1])
+    
+    # 🌟 修改点 2：在 Optuna 内部动态采样 aux_weight
+    aux_weight = trial.suggest_float('aux_weight', args.aux_weight_range[0], args.aux_weight_range[1])
+    
     mask, branch_info = construct_biosparse_topology(hallmark_dict, master_cpg_list)
     
     model = HeteroAgeHAB(
@@ -130,7 +136,8 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
     
-    criterion = HybridAgeLoss(mae_weight=1.0, rank_weight=rank_weight)
+    # 🌟 修改点 3: 传给 Loss 的将是动态搜索的 aux_weight
+    criterion = HybridAgeLoss(mae_weight=1.0, rank_weight=rank_weight, aux_weight=aux_weight)
     optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=lr, weight_decay=weight_decay)
     
     for epoch in range(args.tune_epochs):
@@ -148,8 +155,9 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
         val_mae = 0
         with torch.no_grad():
             for b, c, s, a, t in val_loader:
-                pred, _ = model(b.to(device), c.to(device), s.to(device))
-                val_mae += torch.mean(torch.abs(pred.flatten() - a.to(device))).item()
+                preds_tuple, _ = model(b.to(device), c.to(device), s.to(device))
+                final_pred = preds_tuple[0]
+                val_mae += torch.mean(torch.abs(final_pred.flatten() - a.to(device))).item()
         val_mae /= len(val_loader)
         
         trial.report(val_mae, epoch)
@@ -174,21 +182,14 @@ def main():
     master_cpg_list = get_feature_list_from_json(args.hallmark_json)
     hallmark_dict = load_hallmark_dict(args.hallmark_json)
 
-    # ==========================
-    # Assemble Execution
-    # ==========================
     if args.command == 'assemble':
         logger.info(f"Assembling {args.split} data from specified modal paths...")
-        # Note: TriModalDataset.load_from_directory handles the logic
         TriModalDataset.load_from_directory(
             args.data_root, args.split, ref_cpg_list=master_cpg_list,
             source_paths={'beta': args.beta_path, 'chalm': args.chalm_path, 'camda': args.camda_path}
         )
         logger.info("Assembly complete. Cache generated in data_root.")
 
-    # ==========================
-    # Train / Tune Execution
-    # ==========================
     elif args.command in ['train', 'tune']:
         full_train_ds = TriModalDataset.load_from_directory(args.data_root, 'Train', ref_cpg_list=master_cpg_list)
         
@@ -203,14 +204,12 @@ def main():
             study.optimize(obj, n_trials=args.n_trials)
             logger.info(f"Best params: {study.best_params}")
             logger.info(f"Best MAE (Validation): {study.best_value:.4f}")
-            logger.info(f"Total finished trials: {len(study.trials)}")
-        
+            
         elif args.command == 'train':
-            ## Dynamically generate output directories with hyperparameters
             hp_suffix = (f"lr{args.lr}_wd{args.weight_decay}_"
                          f"dim{args.hidden_dim}_dp{args.dropout}_"
                          f"bs{args.batch_size}_rank{args.rank_weight}_"
-                         f"moddp{args.modality_dropout}")
+                         f"moddp{args.modality_dropout}_aux{args.aux_weight}")
             args.output_dir = os.path.join(args.output_dir, hp_suffix)
             os.makedirs(args.output_dir, exist_ok=True)
 
@@ -221,7 +220,7 @@ def main():
                                  active_modalities=args.modalities,
                                  modality_dropout=args.modality_dropout).to(device)
             
-            criterion = HybridAgeLoss(mae_weight=args.mae_weight, rank_weight=args.rank_weight, rank_margin=args.rank_margin)
+            criterion = HybridAgeLoss(mae_weight=args.mae_weight, rank_weight=args.rank_weight, rank_margin=args.rank_margin, aux_weight=args.aux_weight)
             optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -239,15 +238,11 @@ def main():
             trainer = HeteroAgeTrainer(model, optimizer, criterion, train_loader, val_loader, scheduler=scheduler, device=device, output_dir=args.output_dir, use_amp=args.use_amp)
             trainer.fit(args.epochs, patience=25)
 
-    # ==========================
-    # Inference Execution
-    # ==========================
     elif args.command == 'predict':
         mask, branch_info = construct_biosparse_topology(hallmark_dict, master_cpg_list)
         model = HeteroAgeHAB(num_cpgs=len(master_cpg_list), branch_info=branch_info, 
                              mask_matrix=mask.to(device), unified_dim=args.hidden_dim, dropout=args.dropout, active_modalities=args.modalities).to(device)
         
-        ##checkpoint = torch.load(args.checkpoint, map_location=device)
         checkpoint = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint)
         model.eval()
@@ -269,7 +264,6 @@ def main():
                 b, c, s, a, t = batch
                 b, c, s, a = b.to(device), c.to(device), s.to(device), a.to(device)
 
-                # --- Disrupt the specified modal before feeding it into the model ---
                 if args.shuffle == 'beta':
                     b = b[torch.randperm(b.size(0))]
                 elif args.shuffle == 'chalm':
@@ -277,7 +271,6 @@ def main():
                 elif args.shuffle == 'camda':
                     s = s[torch.randperm(s.size(0))]
 
-                # --- Feed into the model for prediction ---
                 pred, breakdown = model(b, c, s, return_breakdown=True)
                 
                 pred_np, true_np = pred.cpu().numpy().flatten(), a.cpu().numpy().flatten()

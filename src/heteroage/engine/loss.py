@@ -53,15 +53,19 @@ class RankConsistentLoss(nn.Module):
 
 class HybridAgeLoss(nn.Module):
     """
-    [Loss]: Multi-Objective Hybrid Aging Loss
+    [Loss]: Multi-Objective Hybrid Aging Loss (Upgraded with Deep Supervision)
     
-    Combines Absolute Regression Accuracy (MAE) with Relative Ordering Consistency (Rank).
-    L_total = (w_mae * L_MAE) + (w_rank * L_Rank)
+    Combines Absolute Regression Accuracy (MAE), Relative Ordering Consistency (Rank),
+    and Auxiliary Branch Supervision (Aux) to force each hallmark to learn independent aging features.
+    
+    L_total = (w_mae * L_MAE) + (w_rank * L_Rank) + (w_aux * L_Aux)
     """
-    def __init__(self, mae_weight=1.0, rank_weight=1.0, rank_margin=2.0):
+    def __init__(self, mae_weight=1.0, rank_weight=1.0, rank_margin=2.0, aux_weight=0.3):
         super(HybridAgeLoss, self).__init__()
         self.mae_weight = mae_weight
         self.rank_weight = rank_weight
+        # 🌟 新增：辅助损失的权重（建议设为 0.3，不要太高以免喧宾夺主）
+        self.aux_weight = aux_weight 
         
         self.mae_fn = nn.L1Loss(reduction='mean')
         self.rank_fn = RankConsistentLoss(margin=rank_margin)
@@ -69,28 +73,47 @@ class HybridAgeLoss(nn.Module):
     def forward(self, preds, targets):
         """
         Args:
-            preds (Tensor): Model predictions [B, 1].
+            preds (Tensor or Tuple): Model predictions. If training, it's a tuple (final_pred, branch_preds).
             targets (Tensor): Ground truth [B, 1].
         """
-        if preds.shape != targets.shape:
-            targets = targets.view_as(preds)
-
-        # 1. Regression Term: Absolute Alignment
-        loss_mae = self.mae_fn(preds, targets)
-        
-        # 2. Ranking Term: Manifold Rectification
-        if self.rank_weight > 0:
-            loss_rank = self.rank_fn(preds, targets)
+        # 🌟 核心修改 1：解析带辅助预测的输入
+        if isinstance(preds, tuple):
+            final_pred, branch_preds = preds
         else:
-            loss_rank = torch.tensor(0.0, device=preds.device)
+            final_pred = preds
+            branch_preds = None
+
+        if final_pred.shape != targets.shape:
+            targets = targets.view_as(final_pred)
+
+        # 1. Regression Term: Absolute Alignment (主干网络 MAE)
+        loss_mae = self.mae_fn(final_pred, targets)
+        
+        # 2. Ranking Term: Manifold Rectification (主干网络排序 Loss)
+        if self.rank_weight > 0:
+            loss_rank = self.rank_fn(final_pred, targets)
+        else:
+            loss_rank = torch.tensor(0.0, device=final_pred.device)
             
-        # 3. Objective Fusion
-        total_loss = (self.mae_weight * loss_mae) + (self.rank_weight * loss_rank)
+        # 3. 🌟 核心修改 2：计算 Auxiliary Branch Loss (分支监督 Loss)
+        if branch_preds is not None and self.aux_weight > 0:
+            # targets 的形状是 [Batch, 1]，branch_preds 的形状是 [Batch, 12]
+            # 我们需要把真实年龄复制 12 份，去和 12 个分支的预测年龄一一对比，求平均 MAE
+            targets_expanded = targets.view(-1, 1).expand_as(branch_preds)
+            loss_aux = self.mae_fn(branch_preds, targets_expanded)
+        else:
+            loss_aux = torch.tensor(0.0, device=final_pred.device)
+            
+        # 4. Objective Fusion (融合三大 Loss)
+        total_loss = (self.mae_weight * loss_mae) + \
+                     (self.rank_weight * loss_rank) + \
+                     (self.aux_weight * loss_aux)
         
         # Metrics dictionary for engine logging
         metrics = {
             "loss_mae": loss_mae.item(),
             "loss_rank": loss_rank.item(),
+            "loss_aux": loss_aux.item(),
             "loss_total": total_loss.item()
         }
         
