@@ -200,10 +200,9 @@ class HeteroAgeHAB(nn.Module):
         # 4. Attention-Based Aggregation
         weighted_feat, att_weights = self.attention(branch_feats)
         
-        # 5. Final Regression (主网络的总体预测)
+        # 5. Final Regression
         total_age = self.head(weighted_feat)
         
-        # 🌟 新增：6. 辅助分支预测 (让 12 个分支各自交一份卷子)
         branch_preds = self.aux_predictor(branch_feats).squeeze(-1)
         
         if return_breakdown:
@@ -217,6 +216,5 @@ class HeteroAgeHAB(nn.Module):
                 'hallmark_weights': att_weights.squeeze(-1),
                 'names': [b['name'] for b in self.branch_info]
             }
-        
-        # 🌟 修改：无论训练还是验证，统一返回 (total_age, branch_preds)
+
         return (total_age, branch_preds), att_weights

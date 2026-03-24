@@ -69,10 +69,7 @@ def get_args():
     tune_parser.add_argument('--modality_dropout_range', type=float, nargs=2, default=[0.0, 0.3])
     tune_parser.add_argument('--batch_size_choices', type=int, nargs='+', default=[64, 128, 256])
     tune_parser.add_argument('--rank_weight_range', type=float, nargs=2, default=[1.0, 3.0])
-    
-    # 🌟 修改点 1：把 tune 模式下的 aux_weight 变成范围搜索（默认 0.1 到 1.0）
     tune_parser.add_argument('--aux_weight_range', type=float, nargs=2, default=[0.1, 1.0], help="Search range for aux_weight")
-    
     tune_parser.add_argument('--tune_epochs', type=int, default=20)
     tune_parser.add_argument('--val_ratio', type=float, default=0.2)
     tune_parser.add_argument('--modalities', nargs='+', default=['beta', 'chalm', 'camda'], choices=['beta', 'chalm', 'camda'])
@@ -116,8 +113,6 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     batch_size = trial.suggest_categorical('batch_size', args.batch_size_choices)
     rank_weight = trial.suggest_float('rank_weight', args.rank_weight_range[0], args.rank_weight_range[1])
     modality_dropout = trial.suggest_float('modality_dropout', args.modality_dropout_range[0], args.modality_dropout_range[1])
-    
-    # 🌟 修改点 2：在 Optuna 内部动态采样 aux_weight
     aux_weight = trial.suggest_float('aux_weight', args.aux_weight_range[0], args.aux_weight_range[1])
     
     mask, branch_info = construct_biosparse_topology(hallmark_dict, master_cpg_list)
@@ -135,8 +130,6 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     train_sampler = get_weighted_sampler(train_ds)
     train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, num_workers=args.num_workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
-    
-    # 🌟 修改点 3: 传给 Loss 的将是动态搜索的 aux_weight
     criterion = HybridAgeLoss(mae_weight=1.0, rank_weight=rank_weight, aux_weight=aux_weight)
     optimizer = bnb.optim.AdamW8bit(model.parameters(), lr=lr, weight_decay=weight_decay)
     

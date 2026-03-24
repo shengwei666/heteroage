@@ -64,7 +64,6 @@ class HybridAgeLoss(nn.Module):
         super(HybridAgeLoss, self).__init__()
         self.mae_weight = mae_weight
         self.rank_weight = rank_weight
-        # 🌟 新增：辅助损失的权重（建议设为 0.3，不要太高以免喧宾夺主）
         self.aux_weight = aux_weight 
         
         self.mae_fn = nn.L1Loss(reduction='mean')
@@ -76,7 +75,6 @@ class HybridAgeLoss(nn.Module):
             preds (Tensor or Tuple): Model predictions. If training, it's a tuple (final_pred, branch_preds).
             targets (Tensor): Ground truth [B, 1].
         """
-        # 🌟 核心修改 1：解析带辅助预测的输入
         if isinstance(preds, tuple):
             final_pred, branch_preds = preds
         else:
@@ -86,25 +84,24 @@ class HybridAgeLoss(nn.Module):
         if final_pred.shape != targets.shape:
             targets = targets.view_as(final_pred)
 
-        # 1. Regression Term: Absolute Alignment (主干网络 MAE)
+        # 1. Regression Term: Absolute Alignment
         loss_mae = self.mae_fn(final_pred, targets)
         
-        # 2. Ranking Term: Manifold Rectification (主干网络排序 Loss)
+        # 2. Ranking Term: Manifold Rectification
         if self.rank_weight > 0:
             loss_rank = self.rank_fn(final_pred, targets)
         else:
             loss_rank = torch.tensor(0.0, device=final_pred.device)
             
-        # 3. 🌟 核心修改 2：计算 Auxiliary Branch Loss (分支监督 Loss)
+        # 3. Auxiliary Branch Loss
         if branch_preds is not None and self.aux_weight > 0:
-            # targets 的形状是 [Batch, 1]，branch_preds 的形状是 [Batch, 12]
-            # 我们需要把真实年龄复制 12 份，去和 12 个分支的预测年龄一一对比，求平均 MAE
+            # targets [Batch, 1]，branch_preds [Batch, 12]
             targets_expanded = targets.view(-1, 1).expand_as(branch_preds)
             loss_aux = self.mae_fn(branch_preds, targets_expanded)
         else:
             loss_aux = torch.tensor(0.0, device=final_pred.device)
             
-        # 4. Objective Fusion (融合三大 Loss)
+        # 4. Objective Fusion
         total_loss = (self.mae_weight * loss_mae) + \
                      (self.rank_weight * loss_rank) + \
                      (self.aux_weight * loss_aux)
