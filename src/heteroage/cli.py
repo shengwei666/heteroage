@@ -193,7 +193,8 @@ def main():
         if args.command == 'tune':
             obj = partial(objective, args=args, device=device, master_cpg_list=master_cpg_list, 
                           hallmark_dict=hallmark_dict, train_ds=train_ds, val_ds=val_ds)
-            study = optuna.create_study(direction='minimize', study_name=args.study_name)
+            db_path = os.path.join(args.output_dir, f"{args.study_name}.db")
+            study = optuna.create_study(direction='minimize', study_name=args.study_name, storage=f"sqlite:///{db_path}", load_if_exists=True)
             study.optimize(obj, n_trials=args.n_trials)
             logger.info(f"Best params: {study.best_params}")
             logger.info(f"Best MAE (Validation): {study.best_value:.4f}")
