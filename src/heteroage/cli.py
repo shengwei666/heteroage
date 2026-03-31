@@ -269,12 +269,14 @@ def main():
                 
                 pred_np, true_np = pred.cpu().numpy().flatten(), a.cpu().numpy().flatten()
                 scores, weights = breakdown['branch_scores'].cpu().numpy(), breakdown['hallmark_weights'].cpu().numpy()
+                branch_ages = breakdown['branch_ages'].cpu().numpy()
                 
                 for i in range(len(true_np)):
                     row = {'Tissue': t[i], 'Predicted_Age': pred_np[i], 'True_Age': true_np[i]}
                     for h_idx, h_name in enumerate(breakdown['names']):
                         row[f'{h_name}_Score'] = scores[i, h_idx]
                         row[f'{h_name}_Weight'] = weights[i, h_idx]
+                        row[f'{h_name}_Age'] = branch_ages[i, h_idx]
                     results.append(row)
         
         df_results = pd.DataFrame(results)

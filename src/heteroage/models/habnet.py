@@ -212,9 +212,11 @@ class HeteroAgeHAB(nn.Module):
             raw_branch_preds = torch.cat(raw_branch_preds, dim=1)
             
             return total_age, {
+                'names': [b['name'] for b in self.branch_info],
                 'branch_scores': raw_branch_preds,
                 'hallmark_weights': att_weights.squeeze(-1),
-                'names': [b['name'] for b in self.branch_info]
+                'branch_ages': branch_preds
+                
             }
 
         return (total_age, branch_preds), att_weights
