@@ -135,7 +135,7 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
     
     for epoch in range(args.tune_epochs):
         model.train()
-        for b, c, s, a, t in train_loader:
+        for b, c, s, a, t, sid in train_loader:
             b, c, s, a = b.to(device), c.to(device), s.to(device), a.to(device)
             optimizer.zero_grad()
             pred, _ = model(b, c, s)
@@ -147,7 +147,7 @@ def objective(trial, args, device, master_cpg_list, hallmark_dict, train_ds, val
         model.eval()
         val_mae = 0
         with torch.no_grad():
-            for b, c, s, a, t in val_loader:
+            for b, c, s, a, t, sid in val_loader:
                 preds_tuple, _ = model(b.to(device), c.to(device), s.to(device))
                 final_pred = preds_tuple[0]
                 val_mae += torch.mean(torch.abs(final_pred.flatten() - a.to(device))).item()
@@ -255,7 +255,7 @@ def main():
         results = []
         with torch.no_grad():
             for batch in tqdm(test_loader, desc="Predicting"):
-                b, c, s, a, t = batch
+                b, c, s, a, t, sid = batch
                 b, c, s, a = b.to(device), c.to(device), s.to(device), a.to(device)
 
                 if args.shuffle == 'beta':
@@ -272,7 +272,9 @@ def main():
                 branch_ages = breakdown['branch_ages'].cpu().numpy()
                 
                 for i in range(len(true_np)):
-                    row = {'Tissue': t[i], 'Predicted_Age': pred_np[i], 'True_Age': true_np[i]}
+                    sample_name = str(sid[i])
+                    proj_id = sample_name.split('::')[0] if '::' in sample_name else 'Unknown'
+                    row = {'Sample_ID': sample_name, 'Project_ID': proj_id, 'Tissue': t[i], 'Predicted_Age': pred_np[i], 'True_Age': true_np[i]}
                     for h_idx, h_name in enumerate(breakdown['names']):
                         row[f'{h_name}_Score'] = scores[i, h_idx]
                         row[f'{h_name}_Weight'] = weights[i, h_idx]

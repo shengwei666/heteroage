@@ -27,8 +27,8 @@ class TriModalDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.tissues is not None:
-            return self.beta[idx], self.chalm[idx], self.camda[idx], self.age[idx], self.tissues[idx]
-        return self.beta[idx], self.chalm[idx], self.camda[idx], self.age[idx]
+            return self.beta[idx], self.chalm[idx], self.camda[idx], self.age[idx], self.tissues[idx], self.sample_ids[idx]
+        return self.beta[idx], self.chalm[idx], self.camda[idx], self.age[idx], self.sample_ids[idx]
 
     @staticmethod
     def load_from_directory(data_root, split, ref_cpg_list=None, use_cache=True, source_paths=None):
