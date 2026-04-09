@@ -105,7 +105,21 @@ class TriModalDataset(Dataset):
             
             # Metadata extraction
             ages = df_b['Age'].astype(float).values
-            ids = df_b.index.astype(str).values
+            # --- 修复 1：提取真实的 sample_id ---
+            if 'sample_id' in df_b.columns:
+                base_ids = df_b['sample_id'].astype(str).values
+            else:
+                base_ids = df_b.index.astype(str).values
+                
+            # --- 修复 2：提取 Project_ID 并拼接到内部 ID 中 ---
+            if 'project_id' in df_b.columns:
+                p_ids = df_b['project_id'].astype(str).values
+            else:
+                # 如果没有该列，用文件名 (如 GSE61151.pkl) 作为 Project_ID
+                p_ids = [os.path.basename(f_beta).replace('.pkl', '')] * len(df_b)
+                
+            ids = np.array([f"{p}::{s}" for p, s in zip(p_ids, base_ids)])
+            
             tissues = df_b['Tissue'].astype(str).values if 'Tissue' in df_b.columns else np.array(['Unknown'] * len(df_b))
             
             # Feature alignment (Hallmark Reindexing)

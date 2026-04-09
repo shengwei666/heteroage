@@ -272,9 +272,15 @@ def main():
                 branch_ages = breakdown['branch_ages'].cpu().numpy()
                 
                 for i in range(len(true_np)):
-                    sample_name = str(sid[i])
-                    proj_id = sample_name.split('::')[0] if '::' in sample_name else 'Unknown'
+                    raw_sid = str(sid[i])
+                    if '::' in raw_sid:
+                        proj_id, sample_name = raw_sid.split('::', 1)
+                    else:
+                        proj_id = 'Unknown'
+                        sample_name = raw_sid
+                        
                     row = {'Sample_ID': sample_name, 'Project_ID': proj_id, 'Tissue': t[i], 'Predicted_Age': pred_np[i], 'True_Age': true_np[i]}
+
                     for h_idx, h_name in enumerate(breakdown['names']):
                         row[f'{h_name}_Score'] = scores[i, h_idx]
                         row[f'{h_name}_Weight'] = weights[i, h_idx]
